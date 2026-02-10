@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kuis Interaktif Kingdom Fungi - Cloud Version</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .option-btn:hover { transform: translateY(-2px); transition: all 0.2s; }
+        .correct { background-color: #10b981 !important; color: white; }
+        .wrong { background-color: #ef4444 !important; color: white; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen font-sans">
+
+    <div class="max-w-3xl mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="bg-indigo-600 text-white p-6 rounded-t-2xl shadow-lg mb-4 text-center">
+            <h1 class="text-2xl font-bold uppercase tracking-wide">Persiapan Ulangan Fungi</h1>
+            <p class="text-sm opacity-90 mt-2">Latihan 50 Soal Berdasarkan Modul Pembelajaran</p>
+            <div id="user-info" class="text-xs mt-2 font-mono opacity-75">Memuat ID Pengguna...</div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="bg-white p-4 rounded-xl shadow-md mb-6 border border-slate-200">
+            <div class="flex justify-between items-center mb-2 text-sm font-semibold text-slate-600">
+                <span>Progres: <span id="current-idx-display">1</span> / 50</span>
+                <span>Skor: <span id="score-display">0</span></span>
+            </div>
+            <div class="w-full bg-slate-200 rounded-full h-2.5">
+                <div id="progress-bar" class="bg-indigo-500 h-2.5 rounded-full" style="width: 2%"></div>
+            </div>
+        </div>
+
+        <!-- Question Container -->
+        <div id="quiz-container" class="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 min-h-[400px]">
+            <div id="question-area">
+                <h2 id="question-text" class="text-xl font-bold text-slate-800 mb-6 leading-snug">
+                    Memuat soal...
+                </h2>
+                <div id="options-list" class="space-y-3 text-left">
+                    <!-- Options will be generated here -->
+                </div>
+            </div>
+
+            <!-- Feedback Area -->
+            <div id="feedback" class="hidden mt-6 p-4 rounded-lg text-sm font-medium"></div>
+
+            <!-- Navigation -->
+            <div class="mt-8 flex justify-between items-center border-t pt-6">
+                <button id="prev-btn" class="px-6 py-2 bg-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-300 disabled:opacity-50">Kembali</button>
+                <button id="next-btn" class="px-6 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 shadow-md">Lanjut</button>
+            </div>
+        </div>
+
+        <!-- Result Screen -->
+        <div id="result-screen" class="hidden bg-white p-10 rounded-2xl shadow-2xl text-center border-2 border-indigo-100">
+            <h2 class="text-3xl font-extrabold text-indigo-700 mb-4">Selesai!</h2>
+            <div class="text-5xl font-bold mb-2" id="final-score">0</div>
+            <p class="text-slate-500 text-sm mb-6 italic" id="cloud-status">Menyimpan skor ke cloud...</p>
+            <p class="text-slate-600 mb-8" id="result-msg"></p>
+            <button onclick="location.reload()" class="px-8 py-3 bg-indigo-600 text-white rounded-full font-bold hover:bg-indigo-700 transition shadow-lg">Ulangi Kuis</button>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global Config
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'fungi-quiz-app';
+
+        let user = null;
+
+        const questions = [
+            { q: "Cabang ilmu biologi yang mempelajari tentang jamur disebut...", a: ["Mikologi", "Fikologi", "Virologi", "Bakteriologi"], c: 0, p: "Mikologi berasal dari kata mykes (jamur) dan logos (ilmu)." },
+            { q: "Dinding sel jamur mengandung zat yang sama dengan eksoskeleton serangga, yaitu...", a: ["Selulosa", "Lignin", "Kitin", "Peptidoglikan"], c: 2, p: "Kitin adalah ciri khas pembeda jamur dengan tumbuhan (selulosa)." },
+            { q: "Jamur tidak dapat membuat makanannya sendiri karena tidak memiliki...", a: ["Akar", "Klorofil", "Spora", "Miselium"], c: 1, p: "Karena tidak punya klorofil, jamur bersifat heterotrof." },
+            { q: "Kumpulan benang-benang halus penyusun tubuh jamur disebut...", a: ["Septa", "Hifa", "Miselium", "Spora"], c: 2, p: "Miselium adalah jaringan kumpulan hifa." },
+            { q: "Organisme yang memiliki membran inti sel disebut...", a: ["Prokariotik", "Uniseluler", "Eukariotik", "Multiseluler"], c: 2, p: "Kingdom Fungi termasuk kelompok Eukariotik." },
+            { q: "Jamur yang hidup dengan cara mengurai sisa-sisa organisme mati disebut...", a: ["Parasit", "Saprofit", "Mutualisme", "Autotrof"], c: 1, p: "Saprofit berperan sebagai pengurai (dekomposer)." },
+            { q: "Bagian tudung pada jamur makroskopis disebut...", a: ["Stipe", "Volva", "Pileus", "Annulus"], c: 2, p: "Pileus adalah nama ilmiah untuk tudung (cap)." },
+            { q: "Rhizopus oryzae adalah jamur yang berperan dalam pembuatan...", a: ["Kecap", "Tape", "Tempe", "Oncom"], c: 2, p: "Rhizopus adalah kelompok Zygomycota untuk tempe." },
+            { q: "Spora seksual pada kelompok Zygomycota adalah...", a: ["Askospora", "Basidiospora", "Zigospora", "Konidiospora"], c: 2, p: "Zygomycota menghasilkan Zigospora." },
+            { q: "Jamur yang digunakan untuk membuat ragi roti/tape adalah...", a: ["Aspergillus wentii", "Saccharomyces cerevisiae", "Penicillium", "Rhizopus"], c: 1, p: "Saccharomyces (ragi) termasuk kelompok Ascomycota uniseluler." },
+            { q: "Sekat antar sel pada hifa disebut...", a: ["Septa", "Stolon", "Rhizoid", "Miselium"], c: 0, p: "Hifa bersekat memiliki septa, hifa tak bersekat disebut senositik." },
+            { q: "Jamur yang belum diketahui tahap reproduksi seksualnya dikelompokkan dalam...", a: ["Ascomycota", "Deuteromycota", "Basidiomycota", "Zygomycota"], c: 1, p: "Deuteromycota disebut fungi imperfecti (jamur tidak sempurna)." },
+            { q: "Spora seksual Ascomycota dihasilkan di dalam kantong yang disebut...", a: ["Basidium", "Zigosporangium", "Askus", "Sporangium"], c: 2, p: "Ascomycota menghasilkan Askospora di dalam Askus." },
+            { q: "Simbiosis antara jamur dengan akar tanaman disebut...", a: ["Lichen", "Mikoriza", "Parasitisme", "Antibiosis"], c: 1, p: "Mikoriza meningkatkan penyerapan unsur hara (terutama fosfor)." },
+            { q: "Lumut kerak (Lichen) merupakan simbiosis antara jamur dengan...", a: ["Akar pohon", "Bakteri", "Alga", "Lumut daun"], c: 2, p: "Jamur memberi air/mineral, alga memberi hasil fotosintesis." },
+            { q: "Hifa jamur yang menembus hingga ke dalam jaringan korteks akar disebut...", a: ["Ektomikoriza", "Endomikoriza", "Hifa senositik", "Haustorium"], c: 1, p: "Endo = Dalam. Menembus hingga korteks." },
+            { q: "Amanita muscaria adalah jamur dari kelompok Basidiomycota yang...", a: ["Bisa dimakan", "Beracun", "Obat antibiotik", "Pembuat kecap"], c: 1, p: "Amanita muscaria sangat beracun (mengandung muskarin)." },
+            { q: "Jamur kuping (Auricularia polytricha) termasuk dalam kelompok...", a: ["Zygomycota", "Ascomycota", "Basidiomycota", "Deuteromycota"], c: 2, p: "Jamur kuping memiliki tubuh buah makroskopis (Basidiokarp)." },
+            { q: "Antibiotik pertama ditemukan dari jamur...", a: ["Aspergillus", "Penicillium", "Saccharomyces", "Neurospora"], c: 1, p: "Penicillium notatum menghasilkan penisilin." },
+            { q: "Kecap dibuat dengan bantuan jamur...", a: ["Aspergillus wentii", "Rhizopus stolonifer", "Monilia sitophila", "Volvariella"], c: 0, p: "Aspergillus wentii digunakan dalam fermentasi kedelai menjadi kecap." },
+            { q: "Penyakit panu pada kulit manusia disebabkan oleh jamur kelompok...", a: ["Ascomycota", "Basidiomycota", "Deuteromycota", "Zygomycota"], c: 2, p: "Jamur kulit umumnya termasuk Deuteromycota." },
+            { q: "Struktur hifa pada Zygomycota bersifat...", a: ["Bersekat", "Senositik (tidak bersekat)", "Uniseluler", "Berinti tunggal"], c: 1, p: "Zygomycota memiliki hifa senositik." },
+            { q: "Tempat pembentukan spora pada bagian bawah tudung jamur Basidiomycota disebut...", a: ["Stipe", "Lamella/Gills", "Volva", "Miselium"], c: 1, p: "Lamella adalah bilah-bilah tempat basidium berada." },
+            { q: "Jamur menyerap nutrisi dari lingkungan melalui proses...", a: ["Ingesti", "Fotosintesis", "Absorpsi", "Fagositosis"], c: 2, p: "Jamur adalah organisme heterotrof absorptif." },
+            { q: "Lichen berperan sebagai bioindikator...", a: ["Kesuburan tanah", "Pencemaran udara", "Kadar air", "Kandungan logam"], c: 1, p: "Lichen sangat sensitif terhadap polusi udara (SO2)." },
+            { q: "Neurospora crassa digunakan untuk membuat makanan tradisional...", a: ["Tempe", "Kecap", "Oncom", "Tauco"], c: 2, p: "Neurospora (jamur oranye) digunakan untuk oncom." },
+            { q: "Spora aseksual pada Ascomycota biasanya berupa...", a: ["Zigospora", "Konidiospora", "Basidiospora", "Askospora"], c: 1, p: "Konidiospora (konidia) adalah spora aseksual Ascomycota/Basidiomycota." },
+            { q: "Aspergillus flavus berbahaya karena menghasilkan racun...", a: ["Muskarin", "Aflatoksin", "Penisilin", "Alkohol"], c: 1, p: "Aflatoksin dapat menyebabkan kanker hati." },
+            { q: "Bagian jamur yang berfungsi menyerap makanan pada Zygomycota disebut...", a: ["Stolon", "Sporangiofor", "Rhizoid", "Spora"], c: 2, p: "Rhizoid berbentuk seperti akar untuk menyerap nutrisi." },
+            { q: "Manakah yang merupakan jamur uniseluler?", a: ["Rhizopus", "Volvariella", "Saccharomyces", "Auricularia"], c: 2, p: "Saccharomyces (ragi) adalah contoh jamur sel tunggal." },
+            { q: "Simbiosis mutualisme jamur dan alga disebut 'tumbuhan perintis' karena...", a: ["Tumbuh paling besar", "Bisa hidup di batu gersang", "Memiliki akar kuat", "Warna hijaunya"], c: 1, p: "Lichen mampu menghancurkan batu menjadi tanah." },
+            { q: "Mikoriza yang hifanya hanya menyelubungi permukaan akar disebut...", a: ["Endomikoriza", "Ektomikoriza", "Lichen", "Parasit"], c: 1, p: "Ektomikoriza umumnya pada pohon hutan (Pinus/Melinjo)." },
+            { q: "Jamur Merang memiliki nama ilmiah...", a: ["Auricularia polytricha", "Volvariella volvacea", "Pleurotus ostreatus", "Amanita"], c: 1, p: "Volvariella volvacea adalah jamur merang." },
+            { q: "Perbedaan utama jamur dengan tumbuhan adalah...", a: ["Cara reproduksi", "Dinding sel dan klorofil", "Membran inti", "Jumlah sel"], c: 1, p: "Jamur: Kitin & Heterotrof. Tumbuhan: Selulosa & Autotrof." },
+            { q: "Hasil akhir reproduksi seksual Basidiomycota adalah...", a: ["Askospora", "Basidiospora", "Zigospora", "Konidia"], c: 1, p: "Basidiospora terbentuk di basidium." },
+            { q: "Jamur yang menyebabkan penyakit kaki atlet (Athlete's foot) adalah...", a: ["Tinea versicolor", "Epidermophyton floccosum", "Candida albicans", "Puccinia graminis"], c: 1, p: "Epidermophyton menyerang sela-sela jari kaki." },
+            { q: "Plasmogami adalah tahap dalam reproduksi jamur berupa...", a: ["Peleburan inti", "Peleburan sitoplasma", "Pembentukan spora", "Pembelahan sel"], c: 1, p: "Plasmogami (sitoplasma), Kariogami (inti)." },
+            { q: "Puccinia graminis adalah jamur parasit yang menyerang...", a: ["Kulit manusia", "Tanaman gandum", "Akar pinus", "Kacang kedelai"], c: 1, p: "Puccinia adalah jamur karat pada gandum." },
+            { q: "Hifa yang berfungsi menyebar ke permukaan substrat pada Rhizopus disebut...", a: ["Rhizoid", "Stolon", "Sporangiofor", "Miselium"], c: 1, p: "Stolon menjalar di atas permukaan." },
+            { q: "Ciri khas Basidiomycota adalah memiliki tubuh buah yang disebut...", a: ["Askokarp", "Basidiokarp", "Zigosporangium", "Konidiokarp"], c: 1, p: "Tubuh buah Basidiomycota disebut Basidiokarp." },
+            { q: "Jamur penghasil kecap dan tauco termasuk dalam genus...", a: ["Rhizopus", "Aspergillus", "Penicillium", "Saccharomyces"], c: 1, p: "Aspergillus wentii (kecap), Aspergillus oryzae (tauco)." },
+            { q: "Saccharomyces bereproduksi aseksual dengan cara...", a: ["Spora", "Fragmentasi", "Membentuk tunas (budding)", "Konidia"], c: 2, p: "Ragi berkembang biak dengan tunas." },
+            { q: "Jamur yang menyerang paru-paru manusia (mikosis) adalah...", a: ["Aspergillus fumigatus", "Saccharomyces", "Rhizopus", "Amanita"], c: 0, p: "Aspergillus fumigatus menyebabkan aspergillosis pada paru." },
+            { q: "Habitat jamur umumnya di tempat yang...", a: ["Panas dan kering", "Terang dan basa", "Lembap dan sedikit asam", "Asin dan berarus"], c: 2, p: "Jamur menyukai lingkungan lembap, asam, dan teduh." },
+            { q: "Fase dikariotik (n+n) sering dijumpai pada kelompok...", a: ["Zygomycota", "Basidiomycota & Ascomycota", "Deuteromycota", "Bakteri"], c: 1, p: "Setelah plasmogami, inti tidak langsung melebur (dikariotik)." },
+            { q: "Jamur tiram (Pleurotus ostreatus) dikonsumsi karena...", a: ["Mengandung obat", "Kaya protein", "Sebagai hiasan", "Penyedap rasa"], c: 1, p: "Jamur tiram adalah sumber protein nabati yang baik." },
+            { q: "Istilah 'Cendawan' biasanya merujuk pada jamur yang...", a: ["Uniseluler", "Berukuran makroskopis (punya tubuh buah)", "Mikroskopis", "Penyebab penyakit"], c: 1, p: "Cendawan identik dengan jamur yang terlihat mata." },
+            { q: "Kariogami menghasilkan inti yang bersifat...", a: ["Haploid (n)", "Diploid (2n)", "Triploid (3n)", "Dikariotik"], c: 1, p: "Kariogami adalah peleburan dua inti haploid menjadi satu inti diploid." },
+            { q: "Alga yang bersimbiosis dengan jamur pada Lichen biasanya dari kelompok...", a: ["Alga merah", "Alga cokelat", "Alga hijau atau Biru (Cyanobacteria)", "Alga keemasan"], c: 2, p: "Alga hijau/biru mampu berfotosintesis untuk simbiosis ini." },
+            { q: "Simbiosis mutualisme artinya...", a: ["Satu untung satu rugi", "Keduanya rugi", "Keduanya untung", "Satu untung satu biasa saja"], c: 2, p: "Kedua pihak mendapatkan manfaat." }
+        ];
+
+        let currentIdx = 0;
+        let score = 0;
+        let answered = new Array(questions.length).fill(null);
+
+        const qText = document.getElementById('question-text');
+        const optionsList = document.getElementById('options-list');
+        const feedback = document.getElementById('feedback');
+        const currentIdxDisplay = document.getElementById('current-idx-display');
+        const scoreDisplay = document.getElementById('score-display');
+        const progressBar = document.getElementById('progress-bar');
+        const nextBtn = document.getElementById('next-btn');
+        const prevBtn = document.getElementById('prev-btn');
+        const cloudStatus = document.getElementById('cloud-status');
+
+        // Init Auth
+        const initAuth = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Gagal login:", error);
+            }
+        };
+
+        onAuthStateChanged(auth, (u) => {
+            user = u;
+            if (user) {
+                document.getElementById('user-info').innerText = `Pemain ID: ${user.uid}`;
+            }
+        });
+
+        const saveScoreToCloud = async (finalScore) => {
+            if (!user) {
+                cloudStatus.innerText = "❌ Gagal menyimpan: Tidak terhubung cloud.";
+                return;
+            }
+            try {
+                // Menentukan path sesuai aturan RULE 1
+                const scoreDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'quiz_scores', 'last_attempt');
+                await setDoc(scoreDocRef, {
+                    score: finalScore,
+                    correctAnswers: score,
+                    totalQuestions: questions.length,
+                    timestamp: new Date().toISOString()
+                });
+                cloudStatus.innerText = "✅ Skor berhasil disimpan ke Cloud!";
+            } catch (error) {
+                console.error("Error Firestore:", error);
+                cloudStatus.innerText = "❌ Gagal menyimpan skor.";
+            }
+        };
+
+        function loadQuestion() {
+            const q = questions[currentIdx];
+            qText.innerText = `${currentIdx + 1}. ${q.q}`;
+            optionsList.innerHTML = '';
+            feedback.classList.add('hidden');
+
+            q.a.forEach((opt, i) => {
+                const btn = document.createElement('button');
+                btn.innerText = opt;
+                btn.className = "option-btn w-full text-left p-4 rounded-xl border-2 border-slate-100 bg-slate-50 hover:border-indigo-300 hover:bg-indigo-50 font-medium transition-all duration-200";
+                
+                if (answered[currentIdx] !== null) {
+                    if (i === q.c) btn.classList.add('correct', 'border-emerald-500');
+                    if (i === answered[currentIdx] && i !== q.c) btn.classList.add('wrong', 'border-red-500');
+                    btn.disabled = true;
+                    showFeedback();
+                }
+
+                btn.onclick = () => selectOption(i);
+                optionsList.appendChild(btn);
+            });
+
+            currentIdxDisplay.innerText = currentIdx + 1;
+            progressBar.style.width = `${((currentIdx + 1) / questions.length) * 100}%`;
+            prevBtn.disabled = currentIdx === 0;
+            
+            if (currentIdx === questions.length - 1 && answered[currentIdx] !== null) {
+                nextBtn.innerText = "Lihat Hasil";
+            } else {
+                nextBtn.innerText = "Lanjut";
+            }
+        }
+
+        function selectOption(idx) {
+            if (answered[currentIdx] !== null) return;
+            answered[currentIdx] = idx;
+            if (idx === questions[currentIdx].c) {
+                score++;
+                scoreDisplay.innerText = score;
+            }
+            loadQuestion();
+        }
+
+        function showFeedback() {
+            const q = questions[currentIdx];
+            feedback.innerText = "💡 Penjelasan: " + q.p;
+            feedback.className = "mt-6 p-4 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-800 block";
+        }
+
+        nextBtn.onclick = () => {
+            if (answered[currentIdx] === null) {
+                alert("Pilih jawaban dulu ya!");
+                return;
+            }
+            if (currentIdx < questions.length - 1) {
+                currentIdx++;
+                loadQuestion();
+            } else {
+                showResult();
+            }
+        };
+
+        prevBtn.onclick = () => {
+            if (currentIdx > 0) {
+                currentIdx--;
+                loadQuestion();
+            }
+        };
+
+        function showResult() {
+            document.getElementById('quiz-container').classList.add('hidden');
+            const resScreen = document.getElementById('result-screen');
+            resScreen.classList.remove('hidden');
+            
+            const finalScore = Math.round((score / questions.length) * 100);
+            document.getElementById('final-score').innerText = finalScore;
+            
+            saveScoreToCloud(finalScore);
+            
+            let msg = "";
+            if (finalScore >= 80) msg = "Luar biasa! Kamu sudah siap tempur buat ulangan besok!";
+            else if (finalScore >= 60) msg = "Bagus! Baca lagi sedikit bagian klasifikasi dan nama jamur ya.";
+            else msg = "Wah, harus baca modul lagi nih. Semangat belajarnya!";
+            
+            document.getElementById('result-msg').innerText = msg;
+        }
+
+        // Start App
+        initAuth();
+        loadQuestion();
+    </script>
+</body>
+</html>

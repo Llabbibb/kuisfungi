@@ -1,14 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, setDoc } from 'firebase/firestore';
 
 // --- INITIALIZE FIREBASE ---
-const firebaseConfig = JSON.parse(__firebase_config);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'fungi-quiz-final';
+// Menggunakan try-catch agar jika config kosong/salah, aplikasi tidak "crash" (blank putih)
+let auth, db;
+let appId = 'fungi-quiz-final';
+
+try {
+    const firebaseConfig = JSON.parse(__firebase_config);
+    const app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+    appId = typeof __app_id !== 'undefined' ? __app_id : 'fungi-quiz-final';
+} catch (e) {
+    console.error("Firebase Configuration Error:", e);
+}
 
 const questions = [
     { q: "Cabang ilmu biologi yang mempelajari tentang jamur disebut...", a: ["Mikologi", "Fikologi", "Virologi", "Bakteriologi"], c: 0, p: "Mikologi berasal dari kata mykes (jamur) dan logos (ilmu)." },
@@ -69,15 +77,20 @@ export default function App() {
     const [score, setScore] = useState(0);
     const [answered, setAnswered] = useState(new Array(questions.length).fill(null));
     const [isFinished, setIsFinished] = useState(false);
-    const [statusMsg, setStatusMsg] = useState('Menunggu kuis selesai...');
+    const [statusMsg, setStatusMsg] = useState('Kuis siap!');
 
-    // 1. Auth Logic
     useEffect(() => {
+        if (!auth) return; // Skip jika Firebase tidak terkonfigurasi
+        
         const initAuth = async () => {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-                await signInAnonymously(auth);
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (err) {
+                console.error("Auth Error:", err);
             }
         };
         initAuth();
@@ -85,9 +98,12 @@ export default function App() {
         return () => unsubscribe();
     }, []);
 
-    // 2. Save Logic
     const saveResult = async (finalScore) => {
-        if (!user) return;
+        if (!db || !user) {
+            setStatusMsg('Mode Offline: Skor hanya tampil di layar ini.');
+            return;
+        }
+        
         setStatusMsg('Menyimpan data ke Cloud...');
         try {
             const resultData = {
@@ -97,12 +113,11 @@ export default function App() {
                 totalQuestions: questions.length,
                 timestamp: Date.now()
             };
-            // Simpan ke path publik sesuai Rule 1 agar bisa dibaca monitor_skor.html
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'all_scores', user.uid), resultData);
             setStatusMsg('✅ Data tersimpan! Cek monitor_skor.html');
         } catch (e) {
-            console.error(e);
-            setStatusMsg('❌ Gagal menyimpan data.');
+            console.error("Save Error:", e);
+            setStatusMsg('❌ Gagal menyimpan ke Cloud (Gunakan monitor offline).');
         }
     };
 
@@ -115,7 +130,7 @@ export default function App() {
     };
 
     const handleNext = () => {
-        if (answered[currentIdx] === null) return alert("Pilih jawaban dulu!");
+        if (answered[currentIdx] === null) return;
         if (currentIdx < questions.length - 1) {
             setCurrentIdx(currentIdx + 1);
         } else {
@@ -142,13 +157,12 @@ export default function App() {
     const q = questions[currentIdx];
 
     return (
-        <div className="min-h-screen bg-slate-50 py-10 px-4">
+        <div className="min-h-screen bg-slate-100 py-10 px-4">
             <div className="max-w-2xl mx-auto">
-                {/* Header */}
                 <div className="bg-indigo-600 p-6 rounded-t-3xl shadow-lg flex justify-between items-center text-white">
                     <div>
                         <h1 className="text-lg font-black uppercase tracking-widest">Fungi Master</h1>
-                        <p className="text-[10px] opacity-70">UID: {user?.uid || 'Memuat...'}</p>
+                        <p className="text-[10px] opacity-70">UID: {user?.uid || 'Guest User'}</p>
                     </div>
                     <div className="text-right">
                         <span className="block text-2xl font-black">{score}</span>
@@ -156,7 +170,6 @@ export default function App() {
                     </div>
                 </div>
 
-                {/* Progress */}
                 <div className="bg-white border-x p-4">
                     <div className="flex justify-between text-[10px] font-bold text-slate-400 mb-2 uppercase">
                         <span>Pertanyaan {currentIdx + 1} dari {questions.length}</span>
@@ -167,7 +180,6 @@ export default function App() {
                     </div>
                 </div>
 
-                {/* Question */}
                 <div className="bg-white p-8 rounded-b-3xl shadow-xl min-h-[450px] flex flex-col">
                     <h2 className="text-xl font-bold text-slate-800 mb-8 leading-relaxed">{q.q}</h2>
                     
@@ -198,7 +210,11 @@ export default function App() {
                         </div>
                     )}
 
-                    <button onClick={handleNext} className="mt-8 w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl hover:bg-indigo-700 transform active:scale-95 transition-all">
+                    <button 
+                        onClick={handleNext} 
+                        disabled={answered[currentIdx] === null}
+                        className={`mt-8 w-full py-4 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl transition-all ${answered[currentIdx] === null ? 'bg-slate-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}
+                    >
                         {currentIdx === questions.length - 1 ? "Selesaikan Kuis" : "Berikutnya"}
                     </button>
                 </div>
